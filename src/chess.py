@@ -17,6 +17,7 @@ class Chess:
         pygame.init()
         pygame.display.set_caption(kwargs.get('title', 'Damas en 6 esquinas'))
         self.colors = kwargs.get('colors', [(255,255,255), (0,0,0)])
+        self.possible_move_colors = kwargs.get('possible_move_colors', [(255,0,0), (0,255,0)])
         self.rectangle_dragin = kwargs.get('rectangle_dragin', False)
         self.n = kwargs.get('board_size', 8)       
         self.surface_sz = kwargs.get('surface_sz', 480)
@@ -81,6 +82,18 @@ class Chess:
     def _draw_pieces(self, *args, **kwargs):
         self._prepare_pieces()
 
+    def _draw_possible_moves(self, possible_moves, *args, **kwargs):
+        for move in possible_moves:
+            move_idx = move['move']
+            coords = [
+                self.table[move_idx]['coords'][0],
+                self.table[move_idx]['coords'][1],
+                self.sq_sz,
+                self.sq_sz,
+            ]
+            print(coords)
+            self.surface.fill(self.possible_move_colors[0], coords)
+
     def _player_is_selecting_piece(self, event=None, *args, **kwargs):
         p1_piece = self.players['player_1']['piece']
         piece_in_collision = None
@@ -123,25 +136,19 @@ class Chess:
             # all others
             return None
 
-    def _calculate_possible_moves_with_direction_for(self, move, direction=None, *args, **kwargs):
-        in_edge = self._piece_is_in_edge(move)
-        possible_move = None
-        if direction is not None:
-            if direction == 'right' and in_edge in ['t', 'l']:
-                possible_move = {'move': move + (self.n + 1), 'type': direction}
-            elif direction == 'left' and in_edge in ['b', 'r']:
-                possible_move = {'move': move - (self.n + 1), 'type': direction}
-            elif direction == 'forward' and in_edge in ['b', 'l']:
-                possible_move = {'move': move + (self.n - 1), 'type': direction}
-            else:
-                if direction == 'right' and in_edge not in ['b', 'r']:
-                    possible_move = {'move': move + (self.n + 1), 'type': direction}
-                elif direction == 'left' and in_edge not in ['t', 'l']:
-                    possible_move = {'move': move - (self.n + 1), 'type': direction}
-                elif direction == 'forward' and in_edge not in ['r', 't']:
-                    possible_move = {'move': move + (self.n - 1), 'type': direction}
-        print(possible_move)
-        # return self._quadrant_is_empty(quadrant=possible_move['move'])
+    def _calculate_possible_moves_jumping_piece(self, possible_move, *args, **kwargs):
+        if possible_move is None:
+            return None
+
+        if possible_move['move'] < 0 or possible_move['move'] > self.n * self.n:
+            return None
+
+        if possible_move['move'] in self.players['player_1']['coords']:
+            return None
+        elif possible_move['move'] in self.players['player_2']['coords']:
+            return None
+
+        return possible_move
 
     def _calculate_possible_moves_for(self, move, *args, **kwargs):
         possible_moves = []
@@ -171,35 +178,59 @@ class Chess:
     def _calculate_possible_moves(self, piece_idx, *args, **kwargs):
         player_piece = self.players['player_1']['coords'][piece_idx]
         possible_moves = self._calculate_possible_moves_for(player_piece)
+        new_possible_moves = []
 
         for possible_move in possible_moves:
             try:
                 self.players['player_1']['coords'].index(possible_move['move'])
                 if possible_move['type'] == 'left':
-                    possible_move = {
-                        'move': possible_move['move'] - (self.n + 1),
-                        'type': possible_move['type']
-                    }
+                    if possible_move['move'] in [0, 16, 32, 48,
+                                                 15, 13, 11, 9]:
+                        possible_move = None
+                    else:
+                        possible_move = {
+                            'last_move': possible_move,
+                            'move': possible_move['move'] - (self.n + 1),
+                            'type': possible_move['type']
+                        }
                 elif possible_move['type'] == 'right':
-                    possible_move = { 
-                        'move': possible_move['move'] + (self.n + 1),
-                        'type': possible_move['type'],
-                    }
+                    if possible_move['move'] in [15, 31, 47,
+                                                 57, 59, 61, 63]:
+                        possible_move = None
+                    else:
+                        possible_move = {
+                            'last_move': possible_move,
+                            'move': possible_move['move'] + (self.n + 1),
+                            'type': possible_move['type'],
+                        }
                 elif possible_move['type'] == 'forward':
-                    possible_move = { 
-                        'move': possible_move['move'] + (self.n - 1),
-                        'type': possible_move['type'],
-                    }
-                print(possible_move)
+                    if possible_move['move'] in [0, 16, 32, 48,
+                                                 57, 59, 61, 63]:
+                        possible_move = None
+                    else:
+                        possible_move = {
+                            'last_move': possible_move,
+                            'move': possible_move['move'] + (self.n - 1),
+                            'type': possible_move['type'],
+                        }
+                possible_move = self._calculate_possible_moves_jumping_piece(possible_move)
+                if possible_move is not None:
+                    new_possible_moves.append(possible_move)
             except ValueError:
-                print(possible_move)
+                new_possible_moves.append(possible_move)
+        return new_possible_moves
 
     def main_loop(self, *args, **kwargs):
         # This is the main loop for the game
+        possible_moves = []
         while True:
             ev = pygame.event.get()
             self._draw_table()
             self._draw_pieces()
+
+            if possible_moves:
+                self._draw_possible_moves(possible_moves)
+
             for event in ev:
                 if not event.__dict__:
                     sys.exit(0)
@@ -207,5 +238,5 @@ class Chess:
                     and event.type == pygame.MOUSEBUTTONUP):
                     piece_in_collision = self._player_is_selecting_piece(event=event)
                     if piece_in_collision is not False:
-                        self._calculate_possible_moves(piece_in_collision)
+                        possible_moves = self._calculate_possible_moves(piece_in_collision)
             pygame.display.flip()
